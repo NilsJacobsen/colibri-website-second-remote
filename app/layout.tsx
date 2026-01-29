@@ -1,15 +1,63 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const aspekta = localFont({
+  src: [
+    {
+      path: "../public/fonts/Aspekta/Aspekta-100.woff2",
+      weight: "100",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-200.woff2",
+      weight: "200",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-300.woff2",
+      weight: "300",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-400.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-500.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-600.woff2",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-700.woff2",
+      weight: "700",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-800.woff2",
+      weight: "800",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/Aspekta/Aspekta-900.woff2",
+      weight: "900",
+      style: "normal",
+    },
+  ],
+  variable: "--font-aspekta",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "../public/fonts/GeistMono/GeistMono-Regular.woff2",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -24,8 +72,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="apple-mobile-web-app-title" content="Colibri" />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${aspekta.variable} ${geistMono.variable} antialiased`}
       >
         {children}
       </body>
