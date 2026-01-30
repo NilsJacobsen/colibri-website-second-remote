@@ -95,22 +95,29 @@ jobs:
             echo "PAT validation successful"
           fi
           
-          # Construct authenticated URL
-          # Format: https://TOKEN@github.com/owner/repo.git
-          AUTH_URL="https://${GIT_PAT}@github.com/${REPO_PATH}.git"
+          # Use git credential helper instead of embedding PAT in URL
+          # This is more reliable for private repos and handles special characters
+          BASE_URL="https://github.com/${REPO_PATH}.git"
           
-          # Add or update remote
+          # Add or update remote (without auth in URL)
           if git remote | grep -q "^second-remote$"; then
             echo "Updating existing second-remote"
-            git remote set-url second-remote "$AUTH_URL"
+            git remote set-url second-remote "$BASE_URL"
           else
             echo "Adding new second-remote"
-            git remote add second-remote "$AUTH_URL"
+            git remote add second-remote "$BASE_URL"
           fi
           
-          # Verify remote configuration (mask PAT in output)
-          echo "Remote URL (masked):"
-          git remote get-url second-remote | sed 's/:[^@]*@/:***@/g'
+          # Configure git to use PAT via credential helper
+          # This method is more reliable than embedding in URL and handles special characters
+          git config --global credential.helper store
+          # For GitHub PATs, use the PAT as the password (username can be anything)
+          echo "https://x-access-token:${GIT_PAT}@github.com" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+          
+          # Verify remote configuration
+          echo "Remote URL:"
+          git remote get-url second-remote
           
           # Test repository access via API first
           echo "Testing repository access via API..."
@@ -133,57 +140,75 @@ jobs:
             echo "API access test successful - repository is accessible"
           fi
           
-          # Test the remote connection with better error output
-          echo "Testing git remote connection..."
-          set +e  # Temporarily disable exit on error to capture output
-          CONNECTION_OUTPUT=$(git ls-remote second-remote HEAD 2>&1)
-          CONNECTION_EXIT=$?
-          set -e  # Re-enable exit on error
+          # Check if repository is empty (no default branch)
+          echo "Checking if repository is empty..."
+          REPO_INFO=$(curl -s -H "Authorization: token ${GIT_PAT}" "https://api.github.com/repos/${REPO_PATH}")
+          DEFAULT_BRANCH=$(echo "$REPO_INFO" | grep -o '"default_branch":"[^"]*"' | cut -d'"' -f4 || echo "")
           
-          if [ $CONNECTION_EXIT -ne 0 ]; then
-            echo "Git error output:"
-            echo "$CONNECTION_OUTPUT"
-            echo ""
-            echo "=========================================="
-            echo "Error: Cannot access remote via git"
-            echo "=========================================="
-            echo ""
-            echo "Repository path: ${REPO_PATH}"
-            echo "API access works, but git access failed."
-            echo ""
-            echo "Possible causes:"
-            echo "  1. Repository might be empty (no commits yet)"
-            echo "  2. Default branch might not be 'main'"
-            echo "  3. URL construction issue"
-            echo ""
-            echo "Attempting to push anyway (this might work if repo is empty)..."
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "Repository appears to be empty (no default branch)"
+            echo "Will push with upstream flag to create the branch"
+            IS_EMPTY=true
           else
-            echo "Git connection test successful!"
+            echo "Repository has default branch: ${DEFAULT_BRANCH}"
+            IS_EMPTY=false
+          fi
+          
+          # Test the remote connection (skip if empty repo)
+          if [ "$IS_EMPTY" = "false" ]; then
+            echo "Testing git remote connection..."
+            set +e  # Temporarily disable exit on error to capture output
+            CONNECTION_OUTPUT=$(git ls-remote second-remote HEAD 2>&1)
+            CONNECTION_EXIT=$?
+            set -e  # Re-enable exit on error
+            
+            if [ $CONNECTION_EXIT -ne 0 ]; then
+              echo "Git error output:"
+              echo "$CONNECTION_OUTPUT"
+              echo ""
+              echo "Warning: Could not access remote via git, but will attempt push anyway"
+            else
+              echo "Git connection test successful!"
+            fi
+          else
+            echo "Skipping git connection test (empty repository)"
           fi
           
           # Push to second remote
           echo "Pushing to second remote: ${REPO_PATH}"
-          set +e  # Temporarily disable exit on error
-          PUSH_OUTPUT=$(git push second-remote main 2>&1)
-          PUSH_EXIT=$?
-          set -e  # Re-enable exit on error
           
-          if [ $PUSH_EXIT -ne 0 ]; then
-            echo "Push output:"
-            echo "$PUSH_OUTPUT"
-            echo ""
-            
-            # Check if it's because the remote branch doesn't exist (empty repo)
-            if echo "$PUSH_OUTPUT" | grep -q "no upstream branch"; then
-              echo "Remote branch doesn't exist. Setting upstream and pushing..."
-              git push -u second-remote main || git push -u second-remote main --force
-            elif echo "$PUSH_OUTPUT" | grep -q "rejected"; then
-              echo "Push was rejected. Attempting with force..."
-              git push second-remote main --force
-            else
-              echo "Push failed with error. See output above."
-              exit 1
-            fi
+          if [ "$IS_EMPTY" = "true" ]; then
+            # For empty repos, use -u flag to set upstream and create the branch
+            echo "Pushing to empty repository with upstream flag..."
+            git push -u second-remote main || {
+              echo "Initial push failed, trying with force..."
+              git push -u second-remote main --force
+            }
+            echo "Push successful! Branch 'main' created on remote."
           else
-            echo "Push successful!"
+            # For non-empty repos, try normal push first
+            set +e  # Temporarily disable exit on error
+            PUSH_OUTPUT=$(git push second-remote main 2>&1)
+            PUSH_EXIT=$?
+            set -e  # Re-enable exit on error
+            
+            if [ $PUSH_EXIT -ne 0 ]; then
+              echo "Push output:"
+              echo "$PUSH_OUTPUT"
+              echo ""
+              
+              # Check if it's because the remote branch doesn't exist
+              if echo "$PUSH_OUTPUT" | grep -q "no upstream branch"; then
+                echo "Remote branch doesn't exist. Setting upstream and pushing..."
+                git push -u second-remote main
+              elif echo "$PUSH_OUTPUT" | grep -q "rejected"; then
+                echo "Push was rejected. Attempting with force..."
+                git push second-remote main --force
+              else
+                echo "Push failed with error. See output above."
+                exit 1
+              fi
+            else
+              echo "Push successful!"
+            fi
           fi
