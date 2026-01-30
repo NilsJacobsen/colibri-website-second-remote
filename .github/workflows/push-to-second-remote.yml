@@ -112,30 +112,21 @@ jobs:
             echo "PAT validation successful"
           fi
           
-          # Use clean URL without embedded credentials
-          BASE_URL="https://github.com/${REPO_PATH}.git"
+          # Construct authenticated URL with PAT embedded directly
+          # This is more reliable than credential helper for GitHub Actions
+          AUTH_URL="https://${GIT_PAT}@github.com/${REPO_PATH}.git"
           
-          # Add or update remote (without auth in URL)
+          # Add or update remote with authenticated URL
           if git remote | grep -q "^second-remote$"; then
             echo "Updating existing second-remote"
-            git remote set-url second-remote "$BASE_URL"
+            git remote set-url second-remote "$AUTH_URL"
           else
             echo "Adding new second-remote"
-            git remote add second-remote "$BASE_URL"
+            git remote add second-remote "$AUTH_URL"
           fi
           
-          # Use credential store with proper format
-          # This is the most reliable method for GitHub PATs
-          git config --global credential.helper store
-          echo "https://x-access-token:${GIT_PAT}@github.com" > ~/.git-credentials
-          chmod 600 ~/.git-credentials
-          
-          # Also set credential helper specifically for github.com
-          git config --global credential.https://github.com.helper store
-          
           echo "Repository path: ${REPO_PATH}"
-          echo "Remote URL: ${BASE_URL}"
-          echo "Credential helper configured"
+          echo "Remote URL configured (with authentication)"
           
           # Test repository access via API first
           echo "Testing repository access via API..."
